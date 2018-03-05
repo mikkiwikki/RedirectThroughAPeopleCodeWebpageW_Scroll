@@ -1,0 +1,101 @@
+Global string &sacOriginURL;
+Global array of number &GaryAWSections;
+
+Component array of array of string &C_arySacOrigin;
+Local string &menu, &component, &page, &pageURL;
+
+Function SetOrigin(&pagename);
+   rem Build Origin Cursor info;
+   &C_arySacOrigin = CreateArrayRept(CreateArrayRept("", 0), 0);
+   &C_arySacOrigin.Push("Page");
+   &C_arySacOrigin [1].Push(&pagename);
+   
+   &level = CurrentLevelNumber();
+   &C_arySacOrigin.Push("Level");
+   &C_arySacOrigin [2].Push(&level);
+   
+   &C_arySacOrigin.Push("Level1Row");
+   If &level >= 1 Then
+      &C_arySacOrigin [3].Push(CurrentRowNumber(1));
+   Else
+      &C_arySacOrigin [3].Push("0");
+   End-If;
+   
+   &C_arySacOrigin.Push("Level2Row");
+   If &level >= 2 Then
+      &C_arySacOrigin [4].Push(CurrentRowNumber(2));
+   Else
+      &C_arySacOrigin [4].Push("0");
+   End-If;
+   
+   &C_arySacOrigin.Push("Level3Row");
+   If &level >= 3 Then
+      &C_arySacOrigin [5].Push(CurrentRowNumber(3));
+   Else
+      &C_arySacOrigin [5].Push("0");
+   End-If;
+   
+   REM Expanded Stages;
+   REM Identify expanded stages so we can expand on return to component;
+   Local Rowset &rsProcess = GetLevel0();
+   Local Rowset &rsStage = &rsProcess.GetRow(1).GetRowset(Scroll.SAC_AW_STAGE);
+   
+   &GaryAWSections = CreateArrayRept(0, 0);
+   For &cntStg = 1 To &rsStage.ActiveRowCount
+      If &rsStage.GetRow(&cntStg).SAC_AW_STAGE.STAGE_NBR.DataAreaCollapsed = False Then
+         &GaryAWSections.Push(&cntStg);
+      Else
+      End-If;
+   End-For;
+   
+End-Function;
+
+Function GoToCriteria(&CriteriaID As string, &rec As Record);
+   rem Build origin URL;
+   Local string &returnMenu = "Menuname." | %Menu;
+   Local string &returnComponent = "Component." | %Component;
+   &sacOriginURL = GenerateComponentContentURL(%Portal, %Node, @&returnMenu, %Market, @&returnComponent, "", %Mode, &rec);
+   
+   If %Page = "SAC_AW_PRCS_MAIN" Then
+      SetOrigin("SAC_AW_PRCS_MAIN");
+   Else
+      REM Secondary pages add the redirect parms on their field change to identify the correct levels and rows since the secondary pages is at level 0.  See SAC_AW_PATH_WRK.Fch and SAC_AW_STEP_WRK.Fch;
+   End-If;
+   
+   REM Add cursor position info to the URL as parameters;
+   REM Page Activate Sets CursorPos for SAC_AW_PRCS_MAIN and for secondary pages RowInit for SAC_AW_PATH_WRK and SAC_AW_STEP_WRK;
+   If Not (&C_arySacOrigin = Null) Then
+      &sacOriginURL = &sacOriginURL | "&ORIGINPAGE=" | &C_arySacOrigin [1][2];
+      &sacOriginURL = &sacOriginURL | "&ORIGINLEVEL=" | &C_arySacOrigin [2][2];
+      
+      &sacOriginURL = &sacOriginURL | "&STAGEROW=" | &C_arySacOrigin [3][2];
+      &sacOriginURL = &sacOriginURL | "&PATHROW=" | &C_arySacOrigin [4][2];
+      &sacOriginURL = &sacOriginURL | "&STEPROW=" | &C_arySacOrigin [5][2];
+   Else
+   End-If;
+   
+   /*UVM MFD PULLED OUT OF BUNDLE prj776669  ReportId#1961094001
+  Ensured that on approval process definition page, detail and criteria hyperlink transfers to correct page.*/
+   /*BEGIN MFD ReportId#1961094001*/
+   &sacOriginURL = EncodeURL(&sacOriginURL);
+   /*BEGIN MFD ReportId#1961094001*/
+   rem Build Redirect to Criteria URL;
+   &menu = "SAC_APPROVAL_WORKFLOW";
+   &component = "SAC_CRITERIA";
+   &page = "SAC_CRITERIA";
+   &pageURL = GenerateComponentContentURL(%Portal, %Node, @("MENUNAME." | &menu), %Market, @("COMPONENT." | &component), @("PAGE." | &page), "U");
+   &pageURL = &pageURL | "&CRTA_ID=" | EncodeURLForQueryString(&CriteriaID);
+   
+   rem Add additional parameters to URL for Information;
+   For &cnt = 1 To &rec.FieldCount
+      If &rec.GetField(&cnt).IsKey Then
+         &Params = &Params | "&" | &rec.GetField(&cnt).Name | "=" | &rec.GetField(&cnt).Value;
+      Else
+      End-If;
+   End-For;
+   
+   &pageURL = &pageURL | &Params;
+   
+   %Response.RedirectURL(&pageURL);
+End-Function;
+
